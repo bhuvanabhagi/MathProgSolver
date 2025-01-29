@@ -1,0 +1,42 @@
+<!-- graphical.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Graphical Method</title>
+</head>
+<body>
+    <h1>Graphical Method</h1>
+
+    <form method="POST">
+        {% csrf_token %}
+        
+        <!-- Choose maximization or minimization -->
+        <label for="optimization_type">Optimization Type:</label>
+        <select name="optimization_type" required>
+            <option value="maximize">Maximize</option>
+            <option value="minimize">Minimize</option>
+        </select><br>
+
+        <!-- Objective Function -->
+        <label for="objective_function">Objective Function (e.g., 4 6 for 4x1 + 6x2):</label>
+        <input type="text" name="objective_function" required><br>
+
+        <!-- Constraints -->
+        <label for="constraints">Constraints (e.g., 2 3 12, 1 2 8):</label>
+        <input type="text" name="constraints" required><br>
+
+        <button type="submit">Submit</button>
+    </form>
+
+    {% if image %}
+        <h2>Graphical Solution</h2>
+        <img src="data:image/png;base64,{{ image }}" alt="Graphical Solution">
+        <p>Optimal Value: {{ optimal_value }}</p>
+        <p>Optimal Vertex: x1 = {{ optimal_vertex.0 }}, x2 = {{ optimal_vertex.1 }}</p>
+    {% elif error %}
+        <p style="color:red;">Error: {{ error }}</p>
+    {% endif %}
+</body>
+</html>

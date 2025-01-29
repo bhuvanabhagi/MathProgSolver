@@ -1,0 +1,31 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>MathProgSolver</title>
+    <link rel="stylesheet" href="{% static 'myapp/style.css' %}">
+</head>
+<body>
+    <h1>Mathematical Programming Solver</h1>
+    <div class="container">
+        <div class="slider">
+            <a href="{% url 'graphical_method' %}">
+                <div class="slide graphical">
+                    <h2>Graphical Method</h2>
+                </div>
+            </a>
+            <a href="{% url 'simplex_method' %}">
+                <div class="slide simplex">
+                    <h2>Simplex Method</h2>
+                </div>
+            </a>
+            <a href="{% url 'transportation_method' %}">
+                <div class="slide transportation">
+                    <h2>Transportation Method</h2>
+                </div>
+            </a>
+        </div>
+    </div>
+</body>
+</html>

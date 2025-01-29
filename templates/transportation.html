@@ -1,0 +1,49 @@
+<!-- transportation.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transportation Method</title>
+</head>
+<body>
+    <h1>Transportation Method</h1>
+
+    <form method="POST">
+        {% csrf_token %}
+        
+        <!-- Cost Matrix -->
+        <label for="cost_matrix">Cost Matrix (e.g., 4 6 8; 1 2 3):</label>
+        <input type="text" name="cost_matrix" required><br>
+
+        <!-- Supply -->
+        <label for="supply">Supply (e.g., 20 30):</label>
+        <input type="text" name="supply" required><br>
+
+        <!-- Demand -->
+        <label for="demand">Demand (e.g., 25 25):</label>
+        <input type="text" name="demand" required><br>
+
+        <button type="submit">Submit</button>
+    </form>
+
+    {% if solution %}
+        <h2>Transportation Solution</h2>
+        <table>
+            <tr>
+                <th>Transported</th>
+                <th>From</th>
+                <th>To</th>
+            </tr>
+            {% for value in solution %}
+                <tr>
+                    <td>{{ value }}</td>
+                </tr>
+            {% endfor %}
+        </table>
+        <p>Total Cost: {{ total_cost }}</p>
+    {% elif error %}
+        <p style="color:red;">Error: {{ error }}</p>
+    {% endif %}
+</body>
+</html>
