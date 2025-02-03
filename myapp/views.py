@@ -1,130 +1,135 @@
-# views.py
-from django.shortcuts import render
+import matplotlib
+matplotlib.use('Agg')
 import numpy as np
 import matplotlib.pyplot as plt
-from io import BytesIO
+import io
 import base64
-from scipy.optimize import linprog
+from django.shortcuts import render
 
 def home(request):
     return render(request, 'home.html')
-# Helper function to parse constraints
-def parse_constraints(constraints_input):
-    return [list(map(float, c.split())) for c in constraints_input.split(',')]
 
-# Graphical Method
 def graphical_method(request):
-    if request.method == "POST":
+    if request.method == 'POST':
         try:
-            # Get optimization type (maximize/minimize)
-            optimization_type = request.POST.get('optimization_type')
-            obj_func = list(map(float, request.POST['objective_function'].split()))  # Objective function
-            constraints = parse_constraints(request.POST['constraints'])  # Constraints
+            # Get objective function coefficients
+            c1 = float(request.POST['c1'])
+            c2 = float(request.POST['c2'])
+            opt_type = request.POST['optimization_type']
 
-            # Setup A, b matrices for constraints
-            A, b = np.array([c[:-1] for c in constraints]), np.array([c[-1] for c in constraints])
+            # Check for negative inputs
+            if c1 < 0 or c2 < 0:
+                raise ValueError("Objective function coefficients must be non-negative.")
 
-            feasible_vertices = []
-            # Solve for vertices using constraints
-            for i in range(len(A)):
-                for j in range(i + 1, len(A)):
-                    try:
-                        vertex = np.linalg.solve(A[[i, j]], b[[i, j]])
-                        if all(np.dot(A, vertex) <= b) and all(vertex >= 0):
-                            feasible_vertices.append(vertex)
-                    except:
-                        pass
+            # Get constraints
+            a = list(map(float, request.POST.getlist('a[]')))
+            b = list(map(float, request.POST.getlist('b[]')))
+            rhs = list(map(float, request.POST.getlist('rhs[]')))
 
-            feasible_vertices = np.array(feasible_vertices)
+            # Check for negative inputs in constraints
+            if any(x < 0 for x in a + b + rhs):
+                raise ValueError("Constraint values must be non-negative.")
 
-            # Maximize or minimize the objective function
-            z_values = [np.dot(obj_func, v) for v in feasible_vertices]
-            if optimization_type == "maximize":
-                optimal_vertex = feasible_vertices[np.argmax(z_values)]
-                optimal_value = np.max(z_values)
-            else:  # Minimize
-                optimal_vertex = feasible_vertices[np.argmin(z_values)]
-                optimal_value = np.min(z_values)
+            constraints = zip(a, b, rhs)  # Store constraints to pass back to the template
 
-            # Plot the result
-            plt.figure()
-            plt.plot(optimal_vertex[0], optimal_vertex[1], 'ro')
-            plt.xlabel("x1")
-            plt.ylabel("x2")
-            plt.title("Graphical Solution")
+            # Create plot
+            x = np.linspace(0, max([rhs_i/a_i if a_i != 0 else 0 for a_i, rhs_i in zip(a, rhs)]) + 5, 100)
             
-            buf = BytesIO()
-            plt.savefig(buf, format='png')
-            buf.seek(0)
-            image = base64.b64encode(buf.getvalue()).decode()
+            # Plot constraints
+            plt.figure(figsize=(10, 8))
+            for i in range(len(a)):
+                if b[i] != 0:
+                    y = (rhs[i] - a[i] * x) / b[i]
+                    plt.plot(x, y, label=f'{a[i]}x + {b[i]}y ≤ {rhs[i]}')
 
-            return render(request, 'graphical.html', {'image': image, 'optimal_value': optimal_value, 'optimal_vertex': optimal_vertex})
+            # Plot non-negativity constraints
+            plt.axhline(y=0, color='k', linestyle='-')
+            plt.axvline(x=0, color='k', linestyle='-')
+
+            # Find intersection points
+            intersection_points = [(0, 0)]
+            for i in range(len(a)):
+                if b[i] != 0:
+                    intersection_points.append((0, rhs[i] / b[i]))
+                if a[i] != 0:
+                    intersection_points.append((rhs[i] / a[i], 0))
+            for i in range(len(a)):
+                for j in range(i + 1, len(a)):
+                    if b[i] != 0 and b[j] != 0:
+                        A = np.array([[a[i], b[i]], [a[j], b[j]]])
+                        b_vec = np.array([rhs[i], rhs[j]])
+                        try:
+                            x_intersect = np.linalg.solve(A, b_vec)
+                            if x_intersect[0] >= 0 and x_intersect[1] >= 0:
+                                intersection_points.append((x_intersect[0], x_intersect[1]))
+                        except np.linalg.LinAlgError:
+                            pass
+
+            # Find feasible points
+            feasible_points = []
+            for point in intersection_points:
+                if all(a[i] * point[0] + b[i] * point[1] <= rhs[i] for i in range(len(a))):
+                    feasible_points.append(point)
+
+            # Find optimal point
+            if feasible_points:
+                z_values = [c1 * point[0] + c2 * point[1] for point in feasible_points]
+                if opt_type == 'max':
+                    optimal_index = np.argmax(z_values)
+                else:
+                    optimal_index = np.argmin(z_values)
+                optimal_point = feasible_points[optimal_index]
+                optimal_value = z_values[optimal_index]
+
+                # Plot feasible points and optimal point
+                x_coords, y_coords = zip(*feasible_points)
+                plt.scatter(x_coords, y_coords, color='blue', label='Feasible points')
+                plt.scatter([optimal_point[0]], [optimal_point[1]], color='red', s=100,
+                          label=f'Optimal point: ({optimal_point[0]:.2f}, {optimal_point[1]:.2f})\nZ={optimal_value:.2f}')
+
+            plt.grid(True)
+            plt.legend()
+            plt.xlabel('x₁')
+            plt.ylabel('x₂')
+            plt.title('Linear Programming Solution (Graphical Method)')
+
+            # Convert plot to base64 string
+            buffer = io.BytesIO()
+            plt.savefig(buffer, format='png')
+            buffer.seek(0)
+            image_png = buffer.getvalue()
+            buffer.close()
+            plt.close()
+
+            graph = base64.b64encode(image_png).decode()
+
+            # Prepare results
+            results = {
+                'graph': graph,
+                'x1': f"{optimal_point[0]:.2f}",
+                'x2': f"{optimal_point[1]:.2f}",
+                'z': f"{optimal_value:.2f}",
+                'optimization_type': opt_type,
+                'c1': c1,
+                'c2': c2,
+                'constraints': list(zip(a, b, rhs))  # Include constraints to pass back to the template
+            }
+
+            return render(request, 'graphical.html', results)
 
         except Exception as e:
-            return render(request, 'graphical.html', {'error': str(e)})
+            error_message = f"An error occurred: {str(e)}"
+            return render(request, 'graphical.html', {
+                'error': error_message,
+                'optimization_type': request.POST.get('optimization_type'),
+                'c1': request.POST.get('c1'),
+                'c2': request.POST.get('c2'),
+                'constraints': list(zip(request.POST.getlist('a[]'), request.POST.getlist('b[]'), request.POST.getlist('rhs[]')))
+            })
 
-    return render(request, 'graphical.html')
-
-# Simplex Method
-def simplex_method(request):
-    if request.method == "POST":
-        try:
-            # Get optimization type (maximize/minimize)
-            optimization_type = request.POST.get('optimization_type')
-            c = np.array(list(map(float, request.POST['objective_function'].split())))  # Objective function
-            constraints = parse_constraints(request.POST['constraints'])  # Constraints
-
-            A, b = np.array([c[:-1] for c in constraints]), np.array([c[-1] for c in constraints])
-
-            # Change the optimization type: max or min
-            if optimization_type == "minimize":
-                result = linprog(c, A_ub=A, b_ub=b, method='highs')
-            else:  # maximize (negate the objective function for maximization)
-                result = linprog(-c, A_ub=A, b_ub=b, method='highs')
-
-            return render(request, 'simplex.html', {'solution': result.x, 'optimal_value': result.fun, 'optimization_type': optimization_type})
-
-        except Exception as e:
-            return render(request, 'simplex.html', {'error': str(e)})
-
-    return render(request, 'simplex.html')
-
-# Transportation Method
-def transportation_method(request):
-    if request.method == "POST":
-        try:
-            # Parse inputs
-            cost_matrix = np.array([list(map(int, row.split())) for row in request.POST['cost_matrix'].split(';')])
-            supply = np.array(list(map(int, request.POST['supply'].split())))
-            demand = np.array(list(map(int, request.POST['demand'].split())))
-
-            # Formulate the transportation problem
-            c = cost_matrix.flatten()
-            A_eq = []
-            b_eq = []
-
-            # Constraints for supply
-            for i in range(len(supply)):
-                row = [0] * len(c)
-                for j in range(len(demand)):
-                    row[i * len(demand) + j] = 1
-                A_eq.append(row)
-                b_eq.append(supply[i])
-
-            # Constraints for demand
-            for j in range(len(demand)):
-                col = [0] * len(c)
-                for i in range(len(supply)):
-                    col[i * len(demand) + j] = 1
-                A_eq.append(col)
-                b_eq.append(demand[j])
-
-            # Solve using linear programming
-            result = linprog(c, A_eq=A_eq, b_eq=b_eq, bounds=(0, None), method='highs')
-
-            return render(request, 'transportation.html', {'solution': result.x.reshape(cost_matrix.shape), 'total_cost': result.fun})
-
-        except Exception as e:
-            return render(request, 'transportation.html', {'error': str(e)})
-
-    return render(request, 'transportation.html')
+    return render(request, 'graphical.html', {
+        'optimization_type': request.POST.get('optimization_type'),
+        'c1': request.POST.get('c1'),
+        'c2': request.POST.get('c2'),
+        'constraints': list(zip(request.POST.getlist('a[]'), request.POST.getlist('b[]'), request.POST.getlist('rhs[]')))
+    })

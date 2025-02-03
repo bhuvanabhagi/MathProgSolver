@@ -1,42 +1,117 @@
-<!-- graphical.html -->
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Graphical Method</title>
+    <title>Linear Programming Solver (Graphical Method)</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .form-container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .constraint, .objective-function {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .constraint .form-control, .objective-function .form-control {
+            width: 70px;
+            text-align: center;
+        }
+    </style>
 </head>
 <body>
-    <h1>Graphical Method</h1>
-
-    <form method="POST">
-        {% csrf_token %}
+    <div class="form-container">
+        <h2 class="text-center mb-4">Linear Programming Solver (Graphical Method)</h2>
         
-        <!-- Choose maximization or minimization -->
-        <label for="optimization_type">Optimization Type:</label>
-        <select name="optimization_type" required>
-            <option value="maximize">Maximize</option>
-            <option value="minimize">Minimize</option>
-        </select><br>
+        <form method="post" action="{% url 'graphical_method' %}">
+            {% csrf_token %}
 
-        <!-- Objective Function -->
-        <label for="objective_function">Objective Function (e.g., 4 6 for 4x1 + 6x2):</label>
-        <input type="text" name="objective_function" required><br>
+            <div class="mb-4">
+                <h4>Objective Function</h4>
+                <div class="objective-function mb-3">
+                    <label>Optimization Type:</label>
+                    <select name="optimization_type" class="form-select">
+                        <option value="max" {% if optimization_type == "max" %}selected{% endif %}>Max</option>
+                        <option value="min" {% if optimization_type == "min" %}selected{% endif %}>Min</option>
+                    </select>
+                </div>
+                <div class="objective-function mb-3">
+                    <label>Z =</label>
+                    <input type="number" step="any" name="c1" class="form-control" min="0" value="{{ c1 }}" required>
+                    <label>x₁ +</label>
+                    <input type="number" step="any" name="c2" class="form-control" min="0" value="{{ c2 }}" required>
+                    <label>x₂</label>
+                </div>
+            </div>
 
-        <!-- Constraints -->
-        <label for="constraints">Constraints (e.g., 2 3 12, 1 2 8):</label>
-        <input type="text" name="constraints" required><br>
+            <div class="mb-4">
+                <h4>Constraints</h4>
+                <div id="constraints-container">
+                    {% for a_val, b_val, rhs_val in constraints %}
+                    <div class="constraint mb-3">
+                        <input type="number" step="any" name="a[]" class="form-control" min="0" value="{{ a_val }}" required>
+                        <label>x₁ +</label>
+                        <input type="number" step="any" name="b[]" class="form-control" min="0" value="{{ b_val }}" required>
+                        <label>x₂ ≤</label>
+                        <input type="number" step="any" name="rhs[]" class="form-control" min="0" value="{{ rhs_val }}" required>
+                        <button type="button" class="btn btn-danger remove-constraint">Remove</button>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="text-center">
+                    <button type="button" class="btn btn-secondary" id="add-constraint">Add Constraint</button>
+                </div>
+            </div>
 
-        <button type="submit">Submit</button>
-    </form>
+            <div class="text-center">
+                <button type="submit" class="btn btn-primary">Solve</button>
+                <button type="button" class="btn btn-warning" id="clear-form">Clear</button>
+            </div>
+        </form>
 
-    {% if image %}
-        <h2>Graphical Solution</h2>
-        <img src="data:image/png;base64,{{ image }}" alt="Graphical Solution">
-        <p>Optimal Value: {{ optimal_value }}</p>
-        <p>Optimal Vertex: x1 = {{ optimal_vertex.0 }}, x2 = {{ optimal_vertex.1 }}</p>
-    {% elif error %}
-        <p style="color:red;">Error: {{ error }}</p>
-    {% endif %}
+        {% if error %}
+            <div class="alert alert-danger mt-4">
+                {{ error }}
+            </div>
+        {% endif %}
+
+        {% if graph %}
+            <div class="mt-4">
+                <h4>Solution:</h4>
+                <p>x₁ = {{ x1 }}</p>
+                <p>x₂ = {{ x2 }}</p>
+                <p>Z = {{ z }}</p>
+                <img src="data:image/png;base64,{{ graph }}" class="img-fluid" alt="Solution Graph">
+            </div>
+        {% endif %}
+    </div>
+
+    <script>
+        document.getElementById('add-constraint').addEventListener('click', function() {
+            const container = document.getElementById('constraints-container');
+            const newConstraint = document.createElement('div');
+            newConstraint.className = 'constraint mb-3';
+            newConstraint.innerHTML = `
+                <input type="number" step="any" name="a[]" class="form-control" min="0" required>
+                <label>x₁ +</label>
+                <input type="number" step="any" name="b[]" class="form-control" min="0" required>
+                <label>x₂ ≤</label>
+                <input type="number" step="any" name="rhs[]" class="form-control" min="0" required>
+                <button type="button" class="btn btn-danger remove-constraint">Remove</button>`;
+            container.appendChild(newConstraint);
+        });
+
+        document.addEventListener('click', function(e) {
+            if (e.target && e.target.classList.contains('remove-constraint')) {
+                e.target.closest('.constraint').remove();
+            }
+        });
+
+        document.getElementById('clear-form').addEventListener('click', function() {
+            document.querySelectorAll('.form-control').forEach(input => input.value = '');
+        });
+    </script>
 </body>
 </html>
