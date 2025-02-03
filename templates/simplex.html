@@ -1,0 +1,112 @@
+{% extends 'home.html' %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <h1 class="text-2xl font-bold mb-6">Simplex Method Solver</h1>
+
+    {% if error %}
+    <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4" role="alert">
+        {{ error }}
+    </div>
+    {% endif %}
+
+    <form method="post" class="space-y-6">
+        {% csrf_token %}
+        
+        <!-- Problem Size Input -->
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Number of Variables:</label>
+                <input type="number" name="num_vars" min="1" max="10" value="{{ num_vars|default:2 }}"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    onchange="this.form.submit()">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Number of Constraints:</label>
+                <input type="number" name="num_constraints" min="1" max="10" value="{{ num_constraints|default:2 }}"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    onchange="this.form.submit()">
+            </div>
+        </div>
+
+        <!-- Objective Function -->
+        <div class="space-y-2">
+            <h2 class="text-lg font-medium">Objective Function (Maximize):</h2>
+            <div class="flex items-center space-x-2">
+                {% for i in num_vars|default:2|add:0|range %}
+                <div class="flex items-center">
+                    <input type="number" step="any" name="obj_coeff_{{ i }}" 
+                        value="{{ objective_coefficients|default:0|slice:i:i|first }}"
+                        class="w-20 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                    <span class="ml-1">x{{ i|add:1 }}</span>
+                    {% if not forloop.last %}
+                    <span class="mx-2">+</span>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Constraints -->
+        <div class="space-y-4">
+            <h2 class="text-lg font-medium">Constraints:</h2>
+            {% for i in num_constraints|default:2|add:0|range %}
+            <div class="flex items-center space-x-2">
+                {% for j in num_vars|default:2|add:0|range %}
+                <div class="flex items-center">
+                    <input type="number" step="any" name="constraint_{{ i }}_{{ j }}"
+                        value="{{ constraints|default:0|slice:i:i|first|slice:j:j|first }}"
+                        class="w-20 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                    <span class="ml-1">x{{ j|add:1 }}</span>
+                    {% if not forloop.last %}
+                    <span class="mx-2">+</span>
+                    {% endif %}
+                </div>
+                {% endfor %}
+                <span class="mx-2">≤</span>
+                <input type="number" step="any" name="rhs_{{ i }}"
+                    value="{{ rhs_values|default:0|slice:i:i|first }}"
+                    class="w-20 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Submit Button -->
+        <div>
+            <button type="submit"
+                class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                Solve
+            </button>
+        </div>
+    </form>
+
+    <!-- Results -->
+    {% if optimal_value %}
+    <div class="mt-8 space-y-4">
+        <h2 class="text-xl font-medium">Results:</h2>
+        <div class="bg-white shadow overflow-hidden sm:rounded-lg">
+            <div class="px-4 py-5 sm:p-6">
+                <dl class="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
+                    <div>
+                        <dt class="text-sm font-medium text-gray-500">Optimal Value</dt>
+                        <dd class="mt-1 text-sm text-gray-900">{{ optimal_value }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-sm font-medium text-gray-500">Number of Iterations</dt>
+                        <dd class="mt-1 text-sm text-gray-900">{{ iterations }}</dd>
+                    </div>
+                    <div class="sm:col-span-2">
+                        <dt class="text-sm font-medium text-gray-500">Solution</dt>
+                        <dd class="mt-1 text-sm text-gray-900">
+                            {% for value in solution %}
+                            x{{ forloop.counter }} = {{ value }}{% if not forloop.last %}, {% endif %}
+                            {% endfor %}
+                        </dd>
+                    </div>
+                </dl>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

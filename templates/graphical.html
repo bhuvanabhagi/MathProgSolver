@@ -19,6 +19,9 @@
             width: 70px;
             text-align: center;
         }
+        .constraint select {
+            width: 80px;
+        }
     </style>
 </head>
 <body>
@@ -49,12 +52,16 @@
             <div class="mb-4">
                 <h4>Constraints</h4>
                 <div id="constraints-container">
-                    {% for a_val, b_val, rhs_val in constraints %}
+                    {% for a_val, b_val, rhs_val, ineq_val in constraints %}
                     <div class="constraint mb-3">
                         <input type="number" step="any" name="a[]" class="form-control" min="0" value="{{ a_val }}" required>
                         <label>x₁ +</label>
                         <input type="number" step="any" name="b[]" class="form-control" min="0" value="{{ b_val }}" required>
-                        <label>x₂ ≤</label>
+                        <label>x₂</label>
+                        <select name="ineq[]" class="form-select">
+                            <option value="<=" {% if ineq_val == "<=" %}selected{% endif %}>&le;</option>
+                            <option value=">=" {% if ineq_val == ">=" %}selected{% endif %}>&ge;</option>
+                        </select>
                         <input type="number" step="any" name="rhs[]" class="form-control" min="0" value="{{ rhs_val }}" required>
                         <button type="button" class="btn btn-danger remove-constraint">Remove</button>
                     </div>
@@ -97,7 +104,11 @@
                 <input type="number" step="any" name="a[]" class="form-control" min="0" required>
                 <label>x₁ +</label>
                 <input type="number" step="any" name="b[]" class="form-control" min="0" required>
-                <label>x₂ ≤</label>
+                <label>x₂</label>
+                <select name="ineq[]" class="form-select">
+                    <option value="<=">&le;</option>
+                    <option value=">=">&ge;</option>
+                </select>
                 <input type="number" step="any" name="rhs[]" class="form-control" min="0" required>
                 <button type="button" class="btn btn-danger remove-constraint">Remove</button>`;
             container.appendChild(newConstraint);
