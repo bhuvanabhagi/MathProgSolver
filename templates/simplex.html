@@ -1,112 +1,302 @@
-{% extends 'home.html' %}
-
-{% block content %}
-<div class="container mx-auto px-4 py-8">
-    <h1 class="text-2xl font-bold mb-6">Simplex Method Solver</h1>
-
-    {% if error %}
-    <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4" role="alert">
-        {{ error }}
-    </div>
-    {% endif %}
-
-    <form method="post" class="space-y-6">
-        {% csrf_token %}
-        
-        <!-- Problem Size Input -->
-        <div class="grid grid-cols-2 gap-4">
-            <div>
-                <label class="block text-sm font-medium text-gray-700">Number of Variables:</label>
-                <input type="number" name="num_vars" min="1" max="10" value="{{ num_vars|default:2 }}"
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                    onchange="this.form.submit()">
-            </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-700">Number of Constraints:</label>
-                <input type="number" name="num_constraints" min="1" max="10" value="{{ num_constraints|default:2 }}"
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                    onchange="this.form.submit()">
-            </div>
-        </div>
-
-        <!-- Objective Function -->
-        <div class="space-y-2">
-            <h2 class="text-lg font-medium">Objective Function (Maximize):</h2>
-            <div class="flex items-center space-x-2">
-                {% for i in num_vars|default:2|add:0|range %}
-                <div class="flex items-center">
-                    <input type="number" step="any" name="obj_coeff_{{ i }}" 
-                        value="{{ objective_coefficients|default:0|slice:i:i|first }}"
-                        class="w-20 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                    <span class="ml-1">x{{ i|add:1 }}</span>
-                    {% if not forloop.last %}
-                    <span class="mx-2">+</span>
-                    {% endif %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simplex Method Solver</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { 
+            background-color: #f4f6f9; 
+            padding-top: 50px; 
+        }
+        .form-container {
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+        .dynamic-input-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .dynamic-input-container .form-control {
+            width: 80px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="form-container">
+            <h2 class="text-center mb-4">Simplex Method Solver</h2>
+            
+            <form id="simplexForm">
+                {% csrf_token %}
+                
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Number of Variables</label>
+                        <input type="number" name="num_vars" id="numVars" 
+                               class="form-control" min="1" max="10" 
+                               value="2" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Number of Constraints</label>
+                        <input type="number" name="num_constraints" id="numConstraints" 
+                               class="form-control" min="1" max="10" 
+                               value="2" required>
+                    </div>
                 </div>
-                {% endfor %}
-            </div>
-        </div>
 
-        <!-- Constraints -->
-        <div class="space-y-4">
-            <h2 class="text-lg font-medium">Constraints:</h2>
-            {% for i in num_constraints|default:2|add:0|range %}
-            <div class="flex items-center space-x-2">
-                {% for j in num_vars|default:2|add:0|range %}
-                <div class="flex items-center">
-                    <input type="number" step="any" name="constraint_{{ i }}_{{ j }}"
-                        value="{{ constraints|default:0|slice:i:i|first|slice:j:j|first }}"
-                        class="w-20 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                    <span class="ml-1">x{{ j|add:1 }}</span>
-                    {% if not forloop.last %}
-                    <span class="mx-2">+</span>
-                    {% endif %}
+                <div class="mb-4">
+                    <h4>Objective Function (Maximize Z)</h4>
+                    <div id="objectiveFunctionContainer" class="dynamic-input-container mb-3">
+                        <label>Z =</label>
+                    </div>
                 </div>
-                {% endfor %}
-                <span class="mx-2">≤</span>
-                <input type="number" step="any" name="rhs_{{ i }}"
-                    value="{{ rhs_values|default:0|slice:i:i|first }}"
-                    class="w-20 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+
+                <div class="mb-4">
+                    <h4>Constraints</h4>
+                    <div id="constraintsContainer">
+                    </div>
+                </div>
+
+                <div class="text-center">
+                    <button type="submit" class="btn btn-primary me-2">Solve</button>
+                    <button type="button" id="clearButton" class="btn btn-warning">Clear</button>
+                </div>
+            </form>
+
+            <div id="errorDisplay" class="alert alert-danger mt-4" style="display: none;">
             </div>
-            {% endfor %}
-        </div>
 
-        <!-- Submit Button -->
-        <div>
-            <button type="submit"
-                class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                Solve
-            </button>
-        </div>
-    </form>
-
-    <!-- Results -->
-    {% if optimal_value %}
-    <div class="mt-8 space-y-4">
-        <h2 class="text-xl font-medium">Results:</h2>
-        <div class="bg-white shadow overflow-hidden sm:rounded-lg">
-            <div class="px-4 py-5 sm:p-6">
-                <dl class="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
-                    <div>
-                        <dt class="text-sm font-medium text-gray-500">Optimal Value</dt>
-                        <dd class="mt-1 text-sm text-gray-900">{{ optimal_value }}</dd>
-                    </div>
-                    <div>
-                        <dt class="text-sm font-medium text-gray-500">Number of Iterations</dt>
-                        <dd class="mt-1 text-sm text-gray-900">{{ iterations }}</dd>
-                    </div>
-                    <div class="sm:col-span-2">
-                        <dt class="text-sm font-medium text-gray-500">Solution</dt>
-                        <dd class="mt-1 text-sm text-gray-900">
-                            {% for value in solution %}
-                            x{{ forloop.counter }} = {{ value }}{% if not forloop.last %}, {% endif %}
-                            {% endfor %}
-                        </dd>
-                    </div>
-                </dl>
+            <div id="solutionDisplay" class="mt-4 p-3 bg-light" style="display: none;">
+                <h4>Solution:</h4>
+                <p><strong>Optimal Value: </strong><span id="optimalValue"></span></p>
+                <p><strong>Iterations: </strong><span id="iterations"></span></p>
+                <h5>Variable Values:</h5>
+                <ul id="solutionList">
+                </ul>
             </div>
         </div>
     </div>
-    {% endif %}
-</div>
-{% endblock %}
+
+    <script>
+        // Get references to key elements
+        const numVarsInput = document.getElementById('numVars');
+        const numConstraintsInput = document.getElementById('numConstraints');
+        const objectiveFunctionContainer = document.getElementById('objectiveFunctionContainer');
+        const constraintsContainer = document.getElementById('constraintsContainer');
+        const clearButton = document.getElementById('clearButton');
+        const simplexForm = document.getElementById('simplexForm');
+        const errorDisplay = document.getElementById('errorDisplay');
+        const solutionDisplay = document.getElementById('solutionDisplay');
+
+        // Store current values
+        let currentValues = {
+            objectiveCoeffs: [],
+            constraints: [],
+            rhsValues: []
+        };
+
+        // Function to generate objective function inputs
+        function generateObjectiveFunctionInputs(numVars, preserveValues = true) {
+            objectiveFunctionContainer.innerHTML = '<label>Z =</label>';
+            
+            for (let i = 0; i < numVars; i++) {
+                const coeffInput = document.createElement('input');
+                coeffInput.type = 'number';
+                coeffInput.name = `obj_coeff_${i}`;
+                coeffInput.step = 'any';
+                coeffInput.className = 'form-control';
+                coeffInput.required = true;
+                
+                // Preserve value if it exists
+                if (preserveValues && currentValues.objectiveCoeffs[i] !== undefined) {
+                    coeffInput.value = currentValues.objectiveCoeffs[i];
+                }
+                
+                const varLabel = document.createElement('label');
+                varLabel.textContent = `x${i + 1}`;
+                
+                objectiveFunctionContainer.appendChild(coeffInput);
+                objectiveFunctionContainer.appendChild(varLabel);
+                
+                if (i < numVars - 1) {
+                    const plusSign = document.createElement('label');
+                    plusSign.textContent = ' + ';
+                    objectiveFunctionContainer.appendChild(plusSign);
+                }
+            }
+        }
+
+        // Function to generate constraint inputs
+        function generateConstraintInputs(numVars, numConstraints, preserveValues = true) {
+            constraintsContainer.innerHTML = '';
+            
+            for (let i = 0; i < numConstraints; i++) {
+                const constraintDiv = document.createElement('div');
+                constraintDiv.className = 'dynamic-input-container mb-3';
+                
+                for (let j = 0; j < numVars; j++) {
+                    const coeffInput = document.createElement('input');
+                    coeffInput.type = 'number';
+                    coeffInput.name = `constraint_${i}_${j}`;
+                    coeffInput.step = 'any';
+                    coeffInput.className = 'form-control';
+                    coeffInput.required = true;
+                    
+                    // Preserve value if it exists
+                    if (preserveValues && currentValues.constraints[i] && 
+                        currentValues.constraints[i][j] !== undefined) {
+                        coeffInput.value = currentValues.constraints[i][j];
+                    }
+                    
+                    const varLabel = document.createElement('label');
+                    varLabel.textContent = `x${j + 1}`;
+                    
+                    constraintDiv.appendChild(coeffInput);
+                    constraintDiv.appendChild(varLabel);
+                    
+                    if (j < numVars - 1) {
+                        const plusSign = document.createElement('label');
+                        plusSign.textContent = ' + ';
+                        constraintDiv.appendChild(plusSign);
+                    }
+                }
+                
+                const leqLabel = document.createElement('label');
+                leqLabel.textContent = ' ≤ ';
+                constraintDiv.appendChild(leqLabel);
+                
+                const rhsInput = document.createElement('input');
+                rhsInput.type = 'number';
+                rhsInput.name = `rhs_${i}`;
+                rhsInput.step = 'any';
+                rhsInput.className = 'form-control';
+                rhsInput.required = true;
+                
+                // Preserve RHS value if it exists
+                if (preserveValues && currentValues.rhsValues[i] !== undefined) {
+                    rhsInput.value = currentValues.rhsValues[i];
+                }
+                
+                constraintDiv.appendChild(rhsInput);
+                constraintsContainer.appendChild(constraintDiv);
+            }
+        }
+
+        // Function to update current values
+        function updateCurrentValues() {
+            const numVars = parseInt(numVarsInput.value);
+            const numConstraints = parseInt(numConstraintsInput.value);
+            
+            // Update objective coefficients
+            currentValues.objectiveCoeffs = [];
+            for (let i = 0; i < numVars; i++) {
+                const input = document.querySelector(`[name="obj_coeff_${i}"]`);
+                currentValues.objectiveCoeffs[i] = input ? input.value : '';
+            }
+            
+            // Update constraints and RHS values
+            currentValues.constraints = [];
+            currentValues.rhsValues = [];
+            for (let i = 0; i < numConstraints; i++) {
+                currentValues.constraints[i] = [];
+                for (let j = 0; j < numVars; j++) {
+                    const input = document.querySelector(`[name="constraint_${i}_${j}"]`);
+                    currentValues.constraints[i][j] = input ? input.value : '';
+                }
+                const rhsInput = document.querySelector(`[name="rhs_${i}"]`);
+                currentValues.rhsValues[i] = rhsInput ? rhsInput.value : '';
+            }
+        }
+
+        // Handle form submission
+        simplexForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            // Update current values before submission
+            updateCurrentValues();
+            
+            const formData = new FormData(simplexForm);
+            try {
+                const response = await fetch('{% url "simplex_method" %}', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    errorDisplay.textContent = data.error;
+                    errorDisplay.style.display = 'block';
+                } else {
+                    errorDisplay.style.display = 'none';
+                    solutionDisplay.style.display = 'block';
+                    
+                    document.getElementById('optimalValue').textContent = data.optimal_value;
+                    document.getElementById('iterations').textContent = data.iterations;
+                    
+                    const solutionList = document.getElementById('solutionList');
+                    solutionList.innerHTML = '';
+                    data.solution.forEach((value, index) => {
+                        const li = document.createElement('li');
+                        li.textContent = `x${index + 1} = ${parseFloat(value).toFixed(2)}`;
+                        solutionList.appendChild(li);
+                    });
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                errorDisplay.textContent = 'An error occurred while processing your request.';
+                errorDisplay.style.display = 'block';
+            }
+        });
+
+        // Generate initial inputs
+        generateObjectiveFunctionInputs(2);
+        generateConstraintInputs(2, 2);
+
+        // Event listeners for dynamic input regeneration
+        numVarsInput.addEventListener('change', () => {
+            updateCurrentValues();
+            const newNumVars = parseInt(numVarsInput.value);
+            generateObjectiveFunctionInputs(newNumVars, true);
+            generateConstraintInputs(newNumVars, parseInt(numConstraintsInput.value), true);
+        });
+
+        numConstraintsInput.addEventListener('change', () => {
+            updateCurrentValues();
+            const newNumConstraints = parseInt(numConstraintsInput.value);
+            generateConstraintInputs(parseInt(numVarsInput.value), newNumConstraints, true);
+        });
+
+        // Clear button functionality
+        clearButton.addEventListener('click', () => {
+            // Reset all stored values
+            currentValues = {
+                objectiveCoeffs: [],
+                constraints: [],
+                rhsValues: []
+            };
+            
+            // Reset form inputs
+            numVarsInput.value = 2;
+            numConstraintsInput.value = 2;
+            generateObjectiveFunctionInputs(2, false);
+            generateConstraintInputs(2, 2, false);
+            
+            // Clear displays
+            errorDisplay.style.display = 'none';
+            solutionDisplay.style.display = 'none';
+        });
+    </script>
+</body>
+</html>

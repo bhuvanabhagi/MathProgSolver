@@ -188,102 +188,198 @@ def graphical_method(request):
     })
 
 
-
 import numpy as np
 from django.shortcuts import render
+from django.http import JsonResponse
+from typing import List, Dict, Union
+
+def preprocess_input(request, key: str, num_default: int, num_vars: int) -> List[float]:
+    """
+    Preprocess input values for objective function or constraints
+    
+    Args:
+        request: Django request object
+        key: Base key for input fields
+        num_default: Default number of values
+        num_vars: Number of variables
+    
+    Returns:
+        List of float values
+    """
+    return [
+        float(request.POST.get(f'{key}_{i}', 0)) 
+        for i in range(num_vars)
+    ]
+
+def simplex_solve(c: np.ndarray, A: np.ndarray, b: np.ndarray) -> Dict[str, Union[np.ndarray, float, int]]:
+    """
+    Solve linear programming problem using the Simplex Method
+    
+    Args:
+        c: Objective function coefficients
+        A: Constraint matrix
+        b: Right-hand side of constraints
+    
+    Returns:
+        Dictionary with solution details
+    """
+    # Number of variables and constraints
+    m, n = A.shape
+    
+    # Create initial tableau (add slack variables)
+    tableau = np.zeros((m + 1, n + m + 1))
+    
+    # Objective function row (negated for maximization)
+    tableau[0, :n] = -c
+    
+    # Constraint rows with slack variables
+    tableau[1:, :n] = A
+    tableau[1:, n:n+m] = np.eye(m)
+    tableau[1:, -1] = b
+    
+    iterations = 0
+    max_iterations = 100
+    
+    while iterations < max_iterations:
+        # Check if optimal solution is reached
+        if np.all(tableau[0, :-1] >= 0):
+            break
+        
+        # Find entering variable (most negative coefficient)
+        entering_col = np.argmin(tableau[0, :-1])
+        
+        # Check for unbounded solution
+        if np.all(tableau[1:, entering_col] <= 0):
+            return {
+                'error': 'Unbounded Solution', 
+                'solution': None, 
+                'optimal_value': None,
+                'iterations': iterations
+            }
+        
+        # Calculate ratios for leaving variable
+        ratios = []
+        for i in range(1, m + 1):
+            if tableau[i, entering_col] > 0:
+                ratio = tableau[i, -1] / tableau[i, entering_col]
+                ratios.append((i, ratio))
+        
+        # Find leaving row (minimum positive ratio)
+        leaving_row = min(ratios, key=lambda x: x[1])[0]
+        
+        # Perform pivot operation
+        pivot = tableau[leaving_row, entering_col]
+        tableau[leaving_row] /= pivot
+        
+        for i in range(m + 1):
+            if i != leaving_row:
+                factor = tableau[i, entering_col]
+                tableau[i] -= factor * tableau[leaving_row]
+        
+        iterations += 1
+    
+    # Extract solution
+    solution = np.zeros(n)
+    for j in range(n):
+        col = tableau[:, j]
+        if np.sum(col == 1) == 1 and np.sum(col) == 1:
+            row_index = np.where(col == 1)[0][0]
+            solution[j] = tableau[row_index, -1]
+    
+    return {
+        'solution': solution.tolist(),  # Convert numpy array to list for JSON serialization
+        'optimal_value': float(-tableau[0, -1]),  # Convert to float for JSON serialization
+        'iterations': iterations,
+        'error': None
+    }
 
 def simplex_method(request):
+    """
+    Django view for Simplex Method solver
+    
+    Handles both regular requests and AJAX requests
+    """
+    # Default context for initial page load
+    default_context = {
+        'num_vars': 2,
+        'num_constraints': 2,
+        'var_range': range(2),
+        'constraint_range': range(2),
+        'objective_coefficients': [0] * 2,
+        'constraints': [[0] * 2 for _ in range(2)],
+        'rhs_values': [0] * 2,
+    }
+
     if request.method == 'POST':
         try:
-            # Get the number of variables and constraints
+            # Get number of variables and constraints
             num_vars = int(request.POST.get('num_vars', 2))
             num_constraints = int(request.POST.get('num_constraints', 2))
+
+            # Collect objective function coefficients
+            obj_func = preprocess_input(request, 'obj_coeff', 0, num_vars)
             
-            # Get objective function coefficients
-            obj_func = [float(request.POST.get(f'obj_coeff_{i}', 0)) for i in range(num_vars)]
+            # Collect constraints
+            constraints = [
+                preprocess_input(request, f'constraint_{i}', 0, num_vars) 
+                for i in range(num_constraints)
+            ]
             
-            # Get constraints
-            constraints = []
-            rhs_values = []
-            for i in range(num_constraints):
-                constraint = [float(request.POST.get(f'constraint_{i}_{j}', 0)) for j in range(num_vars)]
-                constraints.append(constraint)
-                rhs_values.append(float(request.POST.get(f'rhs_{i}', 0)))
-            
+            # Collect right-hand side values
+            rhs_values = [
+                float(request.POST.get(f'rhs_{i}', 0)) 
+                for i in range(num_constraints)
+            ]
+
             # Convert to numpy arrays
             c = np.array(obj_func)
             A = np.array(constraints)
             b = np.array(rhs_values)
+
+            # Solve using Simplex Method
+            result = simplex_solve(c, A, b)
+
+            # Check if AJAX request
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                if result['error']:
+                    return JsonResponse({'error': result['error']})
+                return JsonResponse({
+                    'optimal_value': f"{result['optimal_value']:.2f}",
+                    'solution': [float(x) for x in result['solution']],
+                    'iterations': result['iterations']
+                })
             
-            # Add slack variables
-            num_total = num_vars + num_constraints
-            tableau = np.zeros((num_constraints + 1, num_total + 1))
-            
-            # Fill tableau
-            tableau[0, 0:num_vars] = -c
-            tableau[1:, 0:num_vars] = A
-            tableau[1:, num_vars:num_total] = np.eye(num_constraints)
-            tableau[1:, -1] = b
-            
-            # Iteration variables
-            iterations = []
-            iteration = 0
-            max_iterations = 100  # Prevent infinite loop
-            
-            # Simplex iterations
-            while iteration < max_iterations:
-                iterations.append(tableau.copy())
-                
-                # Find entering variable (most negative coefficient)
-                entering_col = np.argmin(tableau[0, :-1])
-                if tableau[0, entering_col] >= 0:
-                    break  # Optimal solution found
-                
-                # Find leaving variable (minimum ratio test)
-                ratios = [(i, tableau[i, -1] / tableau[i, entering_col]) 
-                          if tableau[i, entering_col] > 0 else (i, float('inf')) 
-                          for i in range(1, tableau.shape[0])]
-                
-                if all(r[1] == float('inf') for r in ratios):
-                    return render(request, 'simplex.html', {'error': 'Problem is unbounded'})
-                
-                leaving_row = min(ratios, key=lambda x: x[1])[0]
-                
-                # Perform row operations
-                pivot = tableau[leaving_row, entering_col]
-                tableau[leaving_row] /= pivot
-                for i in range(tableau.shape[0]):
-                    if i != leaving_row:
-                        tableau[i] -= tableau[i, entering_col] * tableau[leaving_row]
-                
-                iteration += 1
-            
-            # Extract solution
-            solution = np.zeros(num_vars)
-            for j in range(num_vars):
-                col = tableau[:, j]
-                if np.sum(col) == 1 and np.sum(col == 1) == 1:
-                    solution[j] = tableau[np.where(col == 1)[0][0], -1]
-            
-            optimal_value = -tableau[0, -1]
-            
-            # Pass results to template
+            # Regular form submission (fallback)
             context = {
-                'optimal_value': f"{optimal_value:.2f}",
-                'solution': [f"{x:.2f}" for x in solution],
-                'iterations': iteration,
+                'optimal_value': f"{result['optimal_value']:.2f}" if result['optimal_value'] is not None else None,
+                'solution': result['solution'],
+                'iterations': result['iterations'],
+                'error': result['error'],
                 'num_vars': num_vars,
                 'num_constraints': num_constraints,
                 'objective_coefficients': obj_func,
                 'constraints': constraints,
                 'rhs_values': rhs_values,
-                'var_range': range(num_vars),  # Pass range for template
-                'constraint_range': range(num_constraints),
+                'var_range': range(num_vars),
+                'constraint_range': range(num_constraints)
             }
-            
+            context = {**default_context, **context}
             return render(request, 'simplex.html', context)
-            
+
         except Exception as e:
-            return render(request, 'simplex.html', {'error': f"An error occurred: {str(e)}"})
-    
-    return render(request, 'simplex.html', {'num_vars': 2, 'num_constraints': 2, 'var_range': range(2), 'constraint_range': range(2)})
+            error_message = f"Error: {str(e)}"
+            # Check if AJAX request
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({'error': error_message})
+            
+            # Regular form submission (fallback)
+            error_context = {
+                **default_context,
+                'error': error_message,
+                'num_vars': num_vars,
+                'num_constraints': num_constraints,
+            }
+            return render(request, 'simplex.html', error_context)
+
+    # Initial page load
+    return render(request, 'simplex.html', default_context)
