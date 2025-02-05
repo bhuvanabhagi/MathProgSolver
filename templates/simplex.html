@@ -26,6 +26,9 @@
             width: 80px;
             text-align: center;
         }
+        .inequality-select {
+            width: 70px !important;
+        }
     </style>
 </head>
 <body>
@@ -99,7 +102,8 @@
         let currentValues = {
             objectiveCoeffs: [],
             constraints: [],
-            rhsValues: []
+            rhsValues: [],
+            inequalities: []
         };
 
         // Function to generate objective function inputs
@@ -114,7 +118,6 @@
                 coeffInput.className = 'form-control';
                 coeffInput.required = true;
                 
-                // Preserve value if it exists
                 if (preserveValues && currentValues.objectiveCoeffs[i] !== undefined) {
                     coeffInput.value = currentValues.objectiveCoeffs[i];
                 }
@@ -149,7 +152,6 @@
                     coeffInput.className = 'form-control';
                     coeffInput.required = true;
                     
-                    // Preserve value if it exists
                     if (preserveValues && currentValues.constraints[i] && 
                         currentValues.constraints[i][j] !== undefined) {
                         coeffInput.value = currentValues.constraints[i][j];
@@ -168,9 +170,28 @@
                     }
                 }
                 
-                const leqLabel = document.createElement('label');
-                leqLabel.textContent = ' ≤ ';
-                constraintDiv.appendChild(leqLabel);
+                // Add inequality selector
+                const inequalitySelect = document.createElement('select');
+                inequalitySelect.name = `inequality_${i}`;
+                inequalitySelect.className = 'form-select inequality-select';
+                inequalitySelect.required = true;
+                
+                const leOptions = document.createElement('option');
+                leOptions.value = 'le';
+                leOptions.textContent = '≤';
+                
+                const geOptions = document.createElement('option');
+                geOptions.value = 'ge';
+                geOptions.textContent = '≥';
+                
+                inequalitySelect.appendChild(leOptions);
+                inequalitySelect.appendChild(geOptions);
+                
+                if (preserveValues && currentValues.inequalities[i]) {
+                    inequalitySelect.value = currentValues.inequalities[i];
+                }
+                
+                constraintDiv.appendChild(inequalitySelect);
                 
                 const rhsInput = document.createElement('input');
                 rhsInput.type = 'number';
@@ -179,7 +200,6 @@
                 rhsInput.className = 'form-control';
                 rhsInput.required = true;
                 
-                // Preserve RHS value if it exists
                 if (preserveValues && currentValues.rhsValues[i] !== undefined) {
                     rhsInput.value = currentValues.rhsValues[i];
                 }
@@ -194,16 +214,15 @@
             const numVars = parseInt(numVarsInput.value);
             const numConstraints = parseInt(numConstraintsInput.value);
             
-            // Update objective coefficients
             currentValues.objectiveCoeffs = [];
             for (let i = 0; i < numVars; i++) {
                 const input = document.querySelector(`[name="obj_coeff_${i}"]`);
                 currentValues.objectiveCoeffs[i] = input ? input.value : '';
             }
             
-            // Update constraints and RHS values
             currentValues.constraints = [];
             currentValues.rhsValues = [];
+            currentValues.inequalities = [];
             for (let i = 0; i < numConstraints; i++) {
                 currentValues.constraints[i] = [];
                 for (let j = 0; j < numVars; j++) {
@@ -212,6 +231,9 @@
                 }
                 const rhsInput = document.querySelector(`[name="rhs_${i}"]`);
                 currentValues.rhsValues[i] = rhsInput ? rhsInput.value : '';
+                
+                const inequalityInput = document.querySelector(`[name="inequality_${i}"]`);
+                currentValues.inequalities[i] = inequalityInput ? inequalityInput.value : 'le';
             }
         }
 
@@ -219,7 +241,6 @@
         simplexForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             
-            // Update current values before submission
             updateCurrentValues();
             
             const formData = new FormData(simplexForm);
@@ -238,6 +259,7 @@
                 if (data.error) {
                     errorDisplay.textContent = data.error;
                     errorDisplay.style.display = 'block';
+                    solutionDisplay.style.display = 'none';
                 } else {
                     errorDisplay.style.display = 'none';
                     solutionDisplay.style.display = 'block';
@@ -257,6 +279,7 @@
                 console.error('Error:', error);
                 errorDisplay.textContent = 'An error occurred while processing your request.';
                 errorDisplay.style.display = 'block';
+                solutionDisplay.style.display = 'none';
             }
         });
 
@@ -280,20 +303,18 @@
 
         // Clear button functionality
         clearButton.addEventListener('click', () => {
-            // Reset all stored values
             currentValues = {
                 objectiveCoeffs: [],
                 constraints: [],
-                rhsValues: []
+                rhsValues: [],
+                inequalities: []
             };
             
-            // Reset form inputs
             numVarsInput.value = 2;
             numConstraintsInput.value = 2;
             generateObjectiveFunctionInputs(2, false);
             generateConstraintInputs(2, 2, false);
             
-            // Clear displays
             errorDisplay.style.display = 'none';
             solutionDisplay.style.display = 'none';
         });

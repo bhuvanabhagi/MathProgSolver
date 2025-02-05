@@ -194,45 +194,31 @@ from django.http import JsonResponse
 from typing import List, Dict, Union
 
 def preprocess_input(request, key: str, num_default: int, num_vars: int) -> List[float]:
-    """
-    Preprocess input values for objective function or constraints
-    
-    Args:
-        request: Django request object
-        key: Base key for input fields
-        num_default: Default number of values
-        num_vars: Number of variables
-    
-    Returns:
-        List of float values
-    """
     return [
         float(request.POST.get(f'{key}_{i}', 0)) 
         for i in range(num_vars)
     ]
 
-def simplex_solve(c: np.ndarray, A: np.ndarray, b: np.ndarray) -> Dict[str, Union[np.ndarray, float, int]]:
+def simplex_solve(c: np.ndarray, A: np.ndarray, b: np.ndarray, inequalities: List[str]) -> Dict[str, Union[np.ndarray, float, int]]:
     """
-    Solve linear programming problem using the Simplex Method
-    
-    Args:
-        c: Objective function coefficients
-        A: Constraint matrix
-        b: Right-hand side of constraints
-    
-    Returns:
-        Dictionary with solution details
+    Solve linear programming problem using simplex method
+    Maximize c^T x subject to Ax <= b, x >= 0
     """
-    # Number of variables and constraints
+    # Convert greater-than inequalities to less-than
+    for i, inequality in enumerate(inequalities):
+        if inequality == 'ge':
+            A[i] = -A[i]
+            b[i] = -b[i]
+    
     m, n = A.shape
     
-    # Create initial tableau (add slack variables)
+    # Initialize tableau for maximization
     tableau = np.zeros((m + 1, n + m + 1))
     
-    # Objective function row (negated for maximization)
+    # Set objective coefficients (negative for maximization standard form)
     tableau[0, :n] = -c
     
-    # Constraint rows with slack variables
+    # Set constraint coefficients and slack variables
     tableau[1:, :n] = A
     tableau[1:, n:n+m] = np.eye(m)
     tableau[1:, -1] = b
@@ -241,65 +227,67 @@ def simplex_solve(c: np.ndarray, A: np.ndarray, b: np.ndarray) -> Dict[str, Unio
     max_iterations = 100
     
     while iterations < max_iterations:
-        # Check if optimal solution is reached
-        if np.all(tableau[0, :-1] >= 0):
+        # Find pivot column (most negative entry in top row)
+        pivot_col = np.argmin(tableau[0, :-1])
+        if tableau[0, pivot_col] >= 0:
+            # All coefficients are non-negative - optimal solution found
             break
+            
+        # Find pivot row using minimum ratio test
+        ratios = []
+        for i in range(1, m + 1):
+            if tableau[i, pivot_col] > 0:
+                ratio = tableau[i, -1] / tableau[i, pivot_col]
+                ratios.append((i, ratio))
         
-        # Find entering variable (most negative coefficient)
-        entering_col = np.argmin(tableau[0, :-1])
-        
-        # Check for unbounded solution
-        if np.all(tableau[1:, entering_col] <= 0):
+        if not ratios:
             return {
-                'error': 'Unbounded Solution', 
-                'solution': None, 
+                'error': 'Unbounded solution',
+                'solution': None,
                 'optimal_value': None,
                 'iterations': iterations
             }
-        
-        # Calculate ratios for leaving variable
-        ratios = []
-        for i in range(1, m + 1):
-            if tableau[i, entering_col] > 0:
-                ratio = tableau[i, -1] / tableau[i, entering_col]
-                ratios.append((i, ratio))
-        
-        # Find leaving row (minimum positive ratio)
-        leaving_row = min(ratios, key=lambda x: x[1])[0]
+            
+        # Select row with minimum ratio
+        pivot_row = min(ratios, key=lambda x: x[1])[0]
         
         # Perform pivot operation
-        pivot = tableau[leaving_row, entering_col]
-        tableau[leaving_row] /= pivot
+        pivot_element = tableau[pivot_row, pivot_col]
+        tableau[pivot_row] = tableau[pivot_row] / pivot_element
         
-        for i in range(m + 1):
-            if i != leaving_row:
-                factor = tableau[i, entering_col]
-                tableau[i] -= factor * tableau[leaving_row]
+        for i in range(tableau.shape[0]):
+            if i != pivot_row:
+                tableau[i] = tableau[i] - tableau[i, pivot_col] * tableau[pivot_row]
         
         iterations += 1
+    
+    if iterations == max_iterations:
+        return {
+            'error': 'Maximum iterations reached',
+            'solution': None,
+            'optimal_value': None,
+            'iterations': iterations
+        }
     
     # Extract solution
     solution = np.zeros(n)
     for j in range(n):
         col = tableau[:, j]
-        if np.sum(col == 1) == 1 and np.sum(col) == 1:
-            row_index = np.where(col == 1)[0][0]
-            solution[j] = tableau[row_index, -1]
+        if np.sum(np.abs(col) > 1e-10) == 1:  # Only one non-zero element
+            row = np.where(np.abs(col) > 1e-10)[0]
+            if len(row) > 0:
+                solution[j] = tableau[row[0], -1]
+    
+    optimal_value = tableau[0, -1]  # Corrected here to not negate twice
     
     return {
-        'solution': solution.tolist(),  # Convert numpy array to list for JSON serialization
-        'optimal_value': float(-tableau[0, -1]),  # Convert to float for JSON serialization
+        'solution': solution.tolist(),
+        'optimal_value': optimal_value,
         'iterations': iterations,
         'error': None
     }
 
 def simplex_method(request):
-    """
-    Django view for Simplex Method solver
-    
-    Handles both regular requests and AJAX requests
-    """
-    # Default context for initial page load
     default_context = {
         'num_vars': 2,
         'num_constraints': 2,
@@ -312,22 +300,27 @@ def simplex_method(request):
 
     if request.method == 'POST':
         try:
-            # Get number of variables and constraints
             num_vars = int(request.POST.get('num_vars', 2))
             num_constraints = int(request.POST.get('num_constraints', 2))
 
-            # Collect objective function coefficients
+            # Get objective function coefficients
             obj_func = preprocess_input(request, 'obj_coeff', 0, num_vars)
             
-            # Collect constraints
+            # Get constraints
             constraints = [
                 preprocess_input(request, f'constraint_{i}', 0, num_vars) 
                 for i in range(num_constraints)
             ]
             
-            # Collect right-hand side values
+            # Get RHS values
             rhs_values = [
                 float(request.POST.get(f'rhs_{i}', 0)) 
+                for i in range(num_constraints)
+            ]
+            
+            # Get inequality types
+            inequalities = [
+                request.POST.get(f'inequality_{i}', 'le')
                 for i in range(num_constraints)
             ]
 
@@ -336,23 +329,21 @@ def simplex_method(request):
             A = np.array(constraints)
             b = np.array(rhs_values)
 
-            # Solve using Simplex Method
-            result = simplex_solve(c, A, b)
+            # Solve the problem
+            result = simplex_solve(c, A, b, inequalities)
 
-            # Check if AJAX request
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 if result['error']:
                     return JsonResponse({'error': result['error']})
                 return JsonResponse({
                     'optimal_value': f"{result['optimal_value']:.2f}",
-                    'solution': [float(x) for x in result['solution']],
+                    'solution': [f"{float(x):.2f}" for x in result['solution']],
                     'iterations': result['iterations']
                 })
             
-            # Regular form submission (fallback)
             context = {
                 'optimal_value': f"{result['optimal_value']:.2f}" if result['optimal_value'] is not None else None,
-                'solution': result['solution'],
+                'solution': [f"{x:.2f}" for x in result['solution']] if result['solution'] is not None else None,
                 'iterations': result['iterations'],
                 'error': result['error'],
                 'num_vars': num_vars,
@@ -363,23 +354,18 @@ def simplex_method(request):
                 'var_range': range(num_vars),
                 'constraint_range': range(num_constraints)
             }
-            context = {**default_context, **context}
-            return render(request, 'simplex.html', context)
+            return render(request, 'simplex.html', {**default_context, **context})
 
         except Exception as e:
             error_message = f"Error: {str(e)}"
-            # Check if AJAX request
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return JsonResponse({'error': error_message})
             
-            # Regular form submission (fallback)
-            error_context = {
+            return render(request, 'simplex.html', {
                 **default_context,
                 'error': error_message,
                 'num_vars': num_vars,
                 'num_constraints': num_constraints,
-            }
-            return render(request, 'simplex.html', error_context)
+            })
 
-    # Initial page load
     return render(request, 'simplex.html', default_context)
